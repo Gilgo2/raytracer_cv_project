@@ -58,9 +58,9 @@ def find_intersections(ray_origin, ray_direction, objects):
          
     return intersections
 
-def get_color(intersection_point, surface, surfaces,  lights, background_color, materials):
+def get_color(ray_origin, intersection_point, surface, surfaces,  lights, background_color, materials, margin = 1e-5):
     surface_material = materials[surface.material_index - 1]
-    color = surface_material.transparency * background_color + surface_material.reflection_color
+    color = surface_material.transparency * background_color  + surface_material.reflection_color
     for light in lights:
         light_direction = intersection_point - light.position   
         direction_distance = np.linalg.norm(light_direction)
@@ -68,18 +68,22 @@ def get_color(intersection_point, surface, surfaces,  lights, background_color, 
         
         light_intersections = find_intersections(light.position, light_direction, surfaces)
 
-        if len(light_intersections) >= 1 and light_intersections[0][1] >= direction_distance - 1e-5:
+        obj, intersection_t = light_intersections[0]
+        if len(light_intersections) >= 1 and intersection_t >= direction_distance - margin:
             surface_normal = surface.get_normal(intersection_point)
 
-            
+            #k_a = surface_material.diffuse_color # object ambient color 
+            #k_s = surface_material.specular_color # specular color of surface of intersection point - scalar
+
             diffuse_color = surface_material.diffuse_color * light.specular_intensity * max(0, -light_direction @ surface_normal)
 
             reflection = 2 * (light_direction @ surface_normal) * surface_normal - light_direction
             reflection /= np.linalg.norm(reflection)
-            view_direction = -light_direction
-            specular_color = surface_material.specular_color * light.specular_intensity * max(0, reflection @ view_direction) ** surface_material.shininess
+            view_direction = intersection_point - ray_origin
+            view_direction /= np.linalg.norm(view_direction)
+            specular_color = surface_material.specular_color * light.specular_intensity * max(0, reflection @ view_direction) ** surface_material.shininess 
             
-            color += (diffuse_color + specular_color) * (1 - surface_material.transparency) 
+            color += (diffuse_color + specular_color) * (1 - surface_material.transparency)
     return np.clip(color * 255, 0, 255)
     
     
@@ -96,7 +100,7 @@ def ray_trace(camera, scene_settings, objects, width, height):
             intersections = find_intersections(camera.position, ray_direction, surfaces)
             if len(intersections) > 0:
                 obj, intersection = intersections[0]
-                image_array[height-1-j,width-i-1] = get_color(intersection * ray_direction + camera.position, obj, surfaces, lights, scene_settings.background_color, materials)
+                image_array[height-1-j,width-i-1] = get_color(camera.position, intersection * ray_direction + camera.position, obj, surfaces, lights, scene_settings.background_color, materials)
     return image_array
 
 

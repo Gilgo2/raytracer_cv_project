@@ -6,7 +6,7 @@ class Sphere:
         self.material_index = material_index
 
     
-    def intersect(self, ray_origin, ray_direction, margin=1e-2):
+    def intersect(self, ray_origin, ray_direction):
         L = self.position - ray_origin
         tca = L @ ray_direction        
         if tca < 0:
