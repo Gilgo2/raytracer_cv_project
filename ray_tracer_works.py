@@ -290,11 +290,6 @@ def ray_trace(camera, scene_settings, objects, width, height):
 
 
 
-
-
-import numpy as np
-import random
-
 def compute_shadow_factor(
     intersection_point,
     surface,
