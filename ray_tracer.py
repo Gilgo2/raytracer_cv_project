@@ -9,6 +9,7 @@ from scene_settings import SceneSettings
 from surfaces.cube import Cube
 from surfaces.infinite_plane import InfinitePlane
 from surfaces.sphere import Sphere
+import random
 
 
 def parse_scene_file(file_path):
@@ -55,40 +56,164 @@ def find_intersections(ray_origin, ray_direction, objects):
             intersections.append((obj, intersection))
     intersections.sort(key=lambda x: x[1])
 
-         
     return intersections
-'''
-def get_color(ray_origin, intersection_point, surface, surfaces,  lights, background_color, materials, margin = 1e-5):
-    surface_material = materials[surface.material_index - 1]
-    background_color = np.array(background_color, dtype=float)
-    reflection_color = np.array(surface_material.reflection_color, dtype=float)
-    color = surface_material.transparency * background_color  + reflection_color
-    for light in lights:
-        light_direction = intersection_point - light.position   
-        direction_distance = np.linalg.norm(light_direction)
-        light_direction /= direction_distance
-        
-        light_intersections = find_intersections(light.position, light_direction, surfaces)
 
-        obj, intersection_t = light_intersections[0]
-        if len(light_intersections) >= 1 and intersection_t >= direction_distance - margin:
-            surface_normal = surface.get_normal(intersection_point)
 
-            #k_a = surface_material.diffuse_color # object ambient color 
-            #k_s = surface_material.specular_color # specular color of surface of intersection point - scalar
 
-            diffuse_color = surface_material.diffuse_color * light.specular_intensity * max(0, -light_direction @ surface_normal)
+def is_unblocked(ray_origin, ray_dir, max_dist, surfaces, margin=1e-5):
+    """
+    Returns True if there's no intersection from 'ray_origin' in 'ray_dir'
+    within distance < max_dist. 
+    Otherwise, returns False.
+    """
+    intersections = find_intersections(ray_origin, ray_dir, surfaces)
+    if not intersections:
+        return True
 
-            reflection = 2 * (light_direction @ surface_normal) * surface_normal - light_direction
-            reflection /= np.linalg.norm(reflection)
-            view_direction = intersection_point - ray_origin
-            view_direction /= np.linalg.norm(view_direction)
-            specular_color = surface_material.specular_color * light.specular_intensity * max(0, reflection @ view_direction) ** surface_material.shininess 
-            
-            color += (diffuse_color + specular_color) * (1 - surface_material.transparency)
-    return np.clip(color * 255, 0, 255)
-'''
+    # If the closest intersection is t < max_dist, it's blocked
+    _, t_closest = intersections[0]
+    return (t_closest >= max_dist - margin)
+
+
+
+
+def get_color_new_2(camera_point,
+                  ray_direction,
+                  scene_settings,
+                  surfaces,
+                  lights,
+                  background_color,
+                  materials,
+                  depth,
+                  max_depth,
+                  n_shadow_rays,
+                  margin=1e-5):
+    """
+    Returns the color for a ray in a scene, handling multiple intersections
+    from the farthest transparent object to the nearest one (back-to-front).
+    """
+
+    # 1) If we've hit recursion limit, return background
+    if depth >= max_depth:
+        return np.array(background_color, dtype=float)
+
+    # 2) Gather *all* intersections (not just nearest)
+    all_inters = find_intersections(camera_point, ray_direction, surfaces)
+    if len(all_inters)==0:
+        return np.array(background_color, dtype=float)
+
+
+    usable_inters = []
+    for i, (obj, t_value) in enumerate(all_inters):
+        mat = materials[obj.material_index - 1]
+        if mat.transparency == 0:
+            # Keep only up to (and including) this index - rays don't pass this material...
+            usable_inters = all_inters[:i+1]
+            break
+    else:
+        # If we never 'break', we keep them all
+        usable_inters = all_inters
+
+    if len(usable_inters)==0:
+        return np.array(background_color, dtype=float)
+
     
+    # 4) We'll accumulate the color from the *farthest* intersection
+    #    to the *nearest*. 
+    color = None
+    accumulated_bg = np.array(background_color, dtype=float)
+
+    # Intersection list is sorted from *nearest* to *farthest*,
+    # so we go backward to handle back-to-front transparency.
+    count_inters = len(usable_inters) - 1
+    while count_inters >= 0:
+        surface_obj, t_val = usable_inters[count_inters]
+        count_inters -= 1
+
+        # 4a) Intersection point
+        intersection_point = camera_point + t_val * ray_direction
+        
+        # 4b) Grab material
+        mat_index = surface_obj.material_index - 1
+        mat = materials[mat_index]
+        transp = mat.transparency
+        refl_c = mat.reflection_color
+        diffuse_c = mat.diffuse_color
+        specular_c = mat.specular_color
+
+        # 4c) Reflection recursion
+        reflection_color = np.zeros(3, dtype=float)
+        if depth < max_depth:
+            normal = surface_obj.get_normal(intersection_point)
+            normal /= np.linalg.norm(normal)
+
+            # direction from camera_point to intersection
+            incident_dir = intersection_point - camera_point
+            incident_dir /= np.linalg.norm(incident_dir)
+
+            reflect_dir = incident_dir - 2.0 * np.dot(incident_dir, normal) * normal
+            reflect_dir /= np.linalg.norm(reflect_dir)
+            reflect_origin = intersection_point + margin * reflect_dir
+            reflection_color = get_color_new_2(
+                reflect_origin, reflect_dir,
+                scene_settings, surfaces, lights,
+                background_color, materials,
+                depth+1, max_depth, n_shadow_rays, margin
+            )
+            # Scale reflection by the material's reflection color
+            reflection_color *= refl_c
+
+        # surface normal
+        normal = surface_obj.get_normal(intersection_point)
+        normal /= np.linalg.norm(normal)
+
+        specular_sum = np.array([0.0, 0.0, 0.0])
+        diffuse_sum = np.array([0.0, 0.0, 0.0])
+        for light in lights:
+            L = light.position - intersection_point
+            dist_L = np.linalg.norm(L)
+            L_dir = L / dist_L
+
+            # Lambert
+            lambert = max(0.0, np.dot(normal, L_dir))
+
+            #if the light is behind the surface
+            if lambert <= 0:
+                continue
+
+            shadow_factor = compute_shadow_factor(
+                intersection_point,
+                surface_obj,
+                light,
+                surfaces,
+                n_shadow_rays,
+                margin
+            )
+
+            diffuse_sum += np.float64(light.color) * shadow_factor * light.specular_intensity * lambert
+
+            # Specular
+            view_dir = camera_point - intersection_point
+            view_dir /= np.linalg.norm(view_dir)
+            R = 2.0 * np.dot(normal, L_dir) * normal - L_dir
+            R /= np.linalg.norm(R) 
+
+            spec_angle = max(0.0, np.dot(R, view_dir)) ** mat.shininess
+            specular_sum += shadow_factor * np.float64(light.color) * light.specular_intensity * spec_angle # specular_sum instead of _c
+
+            # Combine diffuse + specular for this light
+        
+        local_light_color = (diffuse_sum*diffuse_c + specular_sum*specular_c) 
+        local_shading = local_light_color
+
+        new_color = (1.0 - transp) * local_shading + transp * accumulated_bg + reflection_color
+
+        # For layering multiple intersections, we treat new_color as the
+        # "background" for the next intersection in front
+        accumulated_bg = new_color
+        color = new_color
+    return color
+
 
 def ray_trace(camera, scene_settings, objects, width, height):
     image_array = np.zeros((height, width, 3))
@@ -98,242 +223,105 @@ def ray_trace(camera, scene_settings, objects, width, height):
     for j in tqdm(range(height)):
         for i in range(width):
             ray_direction = camera.get_ray(i, j, width, height)
-            #intersections = find_intersections(camera.position, ray_direction, surfaces)
-            #if len(intersections) > 0:
-            #    obj, intersection = intersections[0]
-            #    image_array[height-1-j,width-i-1] = get_color(camera.position, intersection * ray_direction + camera.position, obj, surfaces, lights, scene_settings.background_color, materials)
-            color = trace_ray(camera.position, ray_direction,
-                              surfaces, lights, scene_settings.background_color, materials)  # for example
-            image_array[height - 1 - j, width - i - 1] = color
+            color = get_color_new_2(camera.position,ray_direction,scene_settings, surfaces, lights, np.array(scene_settings.background_color), materials,depth=0, max_depth=scene_settings.max_recursions,n_shadow_rays=int(scene_settings.root_number_shadow_rays))
+            image_array[height-1-j,width-i-1] = color 
+    image_array = np.clip(image_array, 0, 1)
+    return image_array * 255
+
+
+def compute_shadow_factor(
+    intersection_point,
+    surface,
+    light,
+    surfaces,
+    n_shadow_rays,
+    margin=1e-5
+):
+    """
+    Returns a shadow factor in [0..1].
+      - 0.0 = fully blocked (in shadow)
+      - 1.0 = fully lit
+
+    If n_shadow_rays <= 1 or light.radius ~ 0, we do a single hard-shadow ray.
+    Otherwise, we do area sampling with n_shadow_rays^2 sub-rays
+    for soft shadows.
     
-    
-    return image_array
-
-
-
-
-
-
-
-
-def trace_ray(ray_origin, ray_direction,surfaces, lights, background_color, materials,depth=0, max_depth=3, margin=1e-5):
-    """
-    Traces a single ray into the scene:
-      1) Finds the closest intersection, if any.
-      2) Returns the color at that intersection by calling get_color(...).
-      3) If no intersection, returns background_color.
-    'depth' is the current recursion depth.
-    'max_depth' is a global cap on bounces.
-    """
-    #if depth > max_depth:
-    #    return np.array(background_color)
-
-    intersections = find_intersections(ray_origin, ray_direction, surfaces)
-    if len(intersections)==0:
-        return np.array(background_color)
-    
-    # We have at least one intersection
-    obj, t_closest = intersections[0]
-    intersection_pt = ray_origin + t_closest * ray_direction
-
-    # Compute shading at that point
-    color_at_hit = get_color(
-        ray_origin,
-        intersection_pt,
-        obj,
-        surfaces,
-        lights,
-        background_color,
-        materials,
-        depth,
-        max_depth,
-        margin
-    )
-
-    return color_at_hit
-
-
-def get_color(ray_origin, intersection_point, surface, surfaces,
-              lights, background_color, materials,depth, max_depth, margin=1e-5):
-    """
-    Returns the color at the intersection_point on 'surface'.
-    Potentially spawns reflection rays if the material is reflective.
+    We assume:
+      - surface.get_normal(point) => normal
+      - light.position => center of the light
+      - light.radius => how large the area light is (float)
     """
 
-    surface_material = materials[surface.material_index - 1]
-    background_color = np.array(background_color, dtype=float)
-    reflection_color = np.array(surface_material.reflection_color, dtype=float)
-    color = surface_material.transparency * background_color  + reflection_color
-    for light in lights:
-        light_direction = intersection_point - light.position   
-        direction_distance = np.linalg.norm(light_direction)
-        light_direction /= direction_distance
-        
-        light_intersections = find_intersections(light.position, light_direction, surfaces)
-
-        obj, intersection_t = light_intersections[0]
-        if len(light_intersections) >= 1 and intersection_t >= direction_distance - margin:
-            surface_normal = surface.get_normal(intersection_point)
-
-            #k_a = surface_material.diffuse_color # object ambient color 
-            #k_s = surface_material.specular_color # specular color of surface of intersection point - scalar
-
-            diffuse_color = surface_material.diffuse_color * light.specular_intensity * max(0, -light_direction @ surface_normal)
-
-            reflection = 2 * (light_direction @ surface_normal) * surface_normal - light_direction
-            reflection /= np.linalg.norm(reflection)
-            view_direction = intersection_point - ray_origin
-            view_direction /= np.linalg.norm(view_direction)
-            specular_color = surface_material.specular_color * light.specular_intensity * max(0, reflection @ view_direction) ** surface_material.shininess 
-            color += (diffuse_color + specular_color) * (1 - surface_material.transparency)
-    '''
-    # 4) Reflection Ray (the actual recursion):
-    #    Suppose we define 'reflection_intensity' in the material
-    #    e.g. 'mat.reflection_intensity' in [0..1]
-    if depth < max_depth:
-        # compute reflection direction
-        normal = surface.get_normal(intersection_point)
-        normal /= np.linalg.norm(normal)
-        incident_dir = intersection_point - ray_origin
-        incident_dir /= np.linalg.norm(incident_dir)
-        reflect_dir = incident_dir - 2 * np.dot(incident_dir, normal) * normal
-        reflect_dir /= np.linalg.norm(reflect_dir)
-
-        # offset to avoid self-intersection
-        reflect_origin = intersection_point + margin * reflect_dir
-
-        # recursively get the color
-        reflection_color = trace_ray(
-            reflect_origin, reflect_dir,
-            surfaces, lights, background_color, materials,
-            depth+1, max_depth, margin
-        )
-
-        # Add reflection contribution
-        color += reflection_color * (1 - surface_material.transparency)
-    '''
-    # 5) Return color in [0..255]
-    return np.clip(color, 0, 255)  # or you can keep 0..1 internally
-
-'''
-def get_color(ray_origin, intersection_point, surface, surfaces,
-              lights, background_color, materials,
-              depth=0, max_depth=3, margin=1e-5):
-    """
-    Returns the color at 'intersection_point' on 'surface', including:
-      - Local shading (diffuse + specular).
-      - (Optional) An ambient term if you like.
-      - A single reflection bounce (if depth < max_depth).
-    """
-
-    # Grab the material
-    mat = materials[surface.material_index - 1]
-
-    # Convert colors to float [0..1] for internal math
-    diffuse_c   = mat.diffuse_color    / 255.0
-    specular_c  = mat.specular_color   / 255.0
-    reflect_c   = mat.reflection_color / 255.0
-    bg_c        = np.array(background_color, dtype=float) / 255.0
-
-    # We'll build up 'color' in [0..1]
-    color = np.zeros(3, dtype=float)
-
-    # ----------------------------------------------------
-    # 1) LOCAL SHADING: DIFFUSE + SPECULAR (+ optional ambient)
-    # ----------------------------------------------------
-
-    # Get the surface normal
+    # 1) Get normal from the surface to offset the origin
     normal = surface.get_normal(intersection_point)
-    normal = normal / np.linalg.norm(normal)
+    normal_len = np.linalg.norm(normal)
+    normal /= normal_len
 
-    # (Optional) add a small ambient term so unlit areas aren't pure black:
-    # e.g. 0.05 or 0.1 times the diffuse color
-    ambient_factor = 0.05
-    color += ambient_factor * diffuse_c
+    # 2) Offset origin to avoid self-intersection
+    shadow_origin = intersection_point + margin * normal
 
-    for light in lights:
-        # Direction from intersection to light
-        L = light.position - intersection_point
-        dist_to_light = np.linalg.norm(L)
-        L /= dist_to_light
+    # 3) Vector to light center
+    to_light = light.position - shadow_origin
+    dist_to_light = np.linalg.norm(to_light)
+    if dist_to_light < margin:
+        # basically at the light
+        return 1.0
+    
+    # 4) If single ray or radius is negligible, do a "hard shadow" check
+    if n_shadow_rays == 0 or getattr(light, 'radius', 0.0) < 1e-9:
+        L_dir = to_light / dist_to_light 
+        if is_unblocked(shadow_origin, L_dir, dist_to_light, surfaces, margin):
+            return 1.0
+        else:
+            return 0.0
+    
+    # 5) Multi-ray approach for soft shadows
+    # We'll do n_shadow_rays^2 sub-rays around the area of the light
+    unblocked_count = 0
+    total_rays = n_shadow_rays * n_shadow_rays
 
-        # 1a) Shadow Ray
-        shadow_origin = intersection_point + margin * L
-        shadow_inters = find_intersections(shadow_origin, L, surfaces)
+    # Build an orthonormal basis around to_light
+    L_dir = to_light / dist_to_light 
+    up = np.array([0,1,0], dtype=float)
+    if abs(np.dot(L_dir, up)) > 0.99:
+        up = np.array([1,0,0], dtype=float)
 
-        # By default, assume we can see the light (not in shadow)
-        in_shadow = False
-        if shadow_inters:
-            # If the closest intersection is closer than the light itself, it's shadowed
-            obj_block, t_block = shadow_inters[0]
-            if t_block < dist_to_light - margin:
-                in_shadow = True
+    x_axis = np.cross(L_dir, up)
+    x_axis /= np.linalg.norm(x_axis)
+    y_axis = np.cross(L_dir, x_axis)
+    y_axis /= np.linalg.norm(y_axis)
 
-        if not in_shadow:
-            # --- Diffuse ---
-            lambert = max(0.0, np.dot(normal, L))
-            diffuse  = diffuse_c * lambert * light.specular_intensity
+    # How big is the "light radius" area
+    cell_size = (2.0 * light.radius) / n_shadow_rays
 
-            # --- Specular ---
-            # reflection of L about N:
-            R = 2.0 * np.dot(normal, L) * normal - L
-            R /= np.linalg.norm(R)
-            # view direction
-            V = ray_origin - intersection_point
-            V /= np.linalg.norm(V)
-            spec_angle  = max(0.0, np.dot(R, V)) ** mat.shininess
-            specular    = specular_c * spec_angle * light.specular_intensity
+    for i in range(n_shadow_rays):
+        for j in range(n_shadow_rays):
+            rx = random.random()  
+            ry = random.random()
 
-            # Combine
-            color += diffuse + specular
+            px = -light.radius + (i + rx) * cell_size
+            py = -light.radius + (j + ry) * cell_size
 
-    # ----------------------------------------------------
-    # 2) REFLECTION (RECURSIVE RAY)
-    # ----------------------------------------------------
-    if depth < max_depth:
-        # direction from the surface point back toward the camera
-        incident_dir = (intersection_point - ray_origin)
-        incident_dir /= np.linalg.norm(incident_dir)
+            offset_vec = px * x_axis + py * y_axis
+            sample_light_pos = light.position + offset_vec
 
-        # reflection direction
-        reflect_dir = incident_dir - 2.0 * np.dot(incident_dir, normal) * normal
-        reflect_dir /= np.linalg.norm(reflect_dir)
+            sub_vec = sample_light_pos - shadow_origin
+            dist_sub = np.linalg.norm(sub_vec)
+            if dist_sub < margin:
+                # effectively at the same point
+                unblocked_count += 1
+                continue
 
-        reflect_origin = intersection_point + margin * reflect_dir
+            sub_dir = sub_vec / dist_sub
 
-        # Recursively trace the reflection ray
-        reflection_col = trace_ray(
-            reflect_origin, 
-            reflect_dir,
-            surfaces, 
-            lights, 
-            background_color, 
-            materials,
-            depth + 1, 
-            max_depth, 
-            margin
-        ) / 255.0  # 'trace_ray' returns in [0..255], convert to [0..1]
+            if is_unblocked(shadow_origin, sub_dir, dist_sub, surfaces, margin):
+                unblocked_count += 1
 
-        # Multiply by 'reflection_color' to tint or scale reflection
-        # If reflection_color == (1,1,1), it's a perfect mirror.
-        color += reflect_c * reflection_col
-
-    # Convert [0..1] => [0..255]
-    color = np.clip(color, 0.0, 1.0) * 255.0
-    return color
-
-'''
-
-
-
-
-
-
-
-
-
-
-
+    base_intensity = 1.0 - light.shadow_intensity
+    shadow_contribution = light.shadow_intensity * (unblocked_count / float(total_rays))
+    shadow_factor = base_intensity + shadow_contribution
+    return shadow_factor
+    
 
 
 

@@ -1,0 +1,51 @@
+# Camera: 	px   	py   	pz 	lx  	ly  	lz 	ux  	uy  	uz 	sc_dist	sc_width
+cam 	  	9   	6	    8 	1.5    1   	1.5  	0   0   	1  	1.4	     1
+
+# Settings: 	bgr  	bgg  	bgb	sh_rays	rec_max
+set 		    1  	    1  	    1   	5 	5
+
+# Material:	dr    	dg    	db	    sr   	sg   	sb 	    rr   	rg  	rb	    phong 	trans
+#materials for the cubes and spheres
+#pink
+mtl		    1   	0.5	    0.5	    1	    1	    1	    0.1	    0.1	    0.1	    50	    0.1
+#blue
+mtl		    0   	0.5	    1	    1	    1	    1	    0.1	    0.1	    0.1	    50	    0.1
+#gray
+mtl		    0.48	0.47	0.44	1	    1	    1	    0.1	    0.1	    0.1	    50	    0.1
+#yellow
+mtl		    1   	1	    0.4	    1	    1	    1	    0.1	    0.1	    0.1	    50	    0.1
+#purple
+mtl		    0.5	    0.5	    0.8	    1	    1	    1	    0.1	    0.1	    0.1	    50	    0.1
+#green
+mtl		    0.2	    0.9	    0.6	    1	    1	    1	    0.1	    0.1	    0.1	    50	    0.1
+
+#this material is for the plane 1
+mtl		    0.8	0.6	0.6	1	    1	    1	    0	    0	    0	    30	    0
+
+#this material is for the plane 2
+mtl		    0.7	0.8 0.7	1	    1	    1	    0.2	    0.2	    0.2	    30	    0
+
+#this material is for the plane 3
+mtl		    0.5	    0.5	    0.8	    1	    1	    1	    0.3	    0.3	    0.3	    30	    0
+
+# Cubes:    px  py  pz  scale   mat_index
+
+box         2.5 -0.5 2.0 0.85    2
+box         0.0 1.5 0.0 0.85    1
+box         2.3 1.5 2.5 0.85    3
+
+# Spheres:	cx   	cy   	cz  	radius 	mat_idx
+sph         2.3     1.5     3.5     0.425   6
+sph         0.0     1.5     1.0     0.425   5
+sph         2.5     -0.5     0.5    0.900   4
+
+# Plane:	nx	ny	nz	offset	mat_idx
+pln		    0   0   1	-2.5	    7
+pln		    0   1   0	-2.5	    8
+pln		    1   0   0	-2.5	    9
+
+
+# Lights:	px	py	pz	r	g	b	spec	shadow	width
+lgt         7   4  12   0.7 0.7 0.7 0.8     0.5     2
+lgt         -1  5  12   0.7 0.7 0.7 0.8     0.5     2
+lgt         -2.5 -2.5 2   0.9 0.9 0.9 0.1     0     2

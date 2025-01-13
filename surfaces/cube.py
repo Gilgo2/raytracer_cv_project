@@ -5,7 +5,7 @@ class Cube:
         self.position = position
         self.scale = scale
         self.material_index = material_index
-
+    '''
     def intersect(self, ray_origin, ray_direction):
 
         # Slab method
@@ -23,7 +23,33 @@ class Cube:
                 if t_min > t_max:
                     return None
         return t_min
-    
+    '''
+    def intersect(self, ray_origin, ray_direction):
+        t_min = -float('inf')
+        t_max = float('inf')
+
+        for i in range(3):
+            # Compute the intersection points for the slabs on each axis
+            t1 = (self.position[i] - self.scale / 2 - ray_origin[i]) / ray_direction[i]
+            t2 = (self.position[i] + self.scale / 2 - ray_origin[i]) / ray_direction[i]
+
+            # Ensure t1 is the entry point and t2 is the exit point
+            t1, t2 = min(t1, t2), max(t1, t2)
+
+            # Update the t_min and t_max values
+            t_min = max(t_min, t1)
+            t_max = min(t_max, t2)
+
+            # If at any point t_min exceeds t_max, there's no intersection
+            if t_min > t_max:
+                return None
+
+        # Ensure that the intersection is in front of the ray origin
+        if t_min < 0:
+            return None
+
+        return t_min
+
     def get_normal(self, intersection_point):
         """
         Finds the intersecting face using the axis with the largest difference between the intersection point and the cube's position

@@ -7,7 +7,7 @@ class InfinitePlane:
 
 
     def intersect(self, ray_origin, ray_direction):
-        t = - (ray_origin @ self.normal + self.offset) / (ray_direction @ self.normal)
+        t = - (ray_origin @ self.normal - self.offset) / (ray_direction @ self.normal)
         if t < 0:
             return None
         return t
