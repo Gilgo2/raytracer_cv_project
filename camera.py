@@ -1,4 +1,5 @@
 import numpy as np
+from ray import Ray
 def normalize(vector):
         """Normalize a vector to unit length."""
         return vector / np.linalg.norm(vector)
@@ -31,7 +32,7 @@ class Camera:
 
         ray_direction = pixel_position - self.position
         ray_direction /= np.linalg.norm(ray_direction)
-        return ray_direction
+        return Ray(self.position, ray_direction)
 
     
 

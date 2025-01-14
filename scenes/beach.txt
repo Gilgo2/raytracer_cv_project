@@ -1,0 +1,63 @@
+# Camera: 	px   	py   	pz 	lx  	ly  	lz 	ux  	uy  	uz 	sc_dist	sc_width
+# Camera positioned for sunset view
+cam 	  	0   	4	22 	0   	1.5   	0  	0   	1   	0  	10.0	6.0
+
+# Settings: 	bgr  	bgg  	bgb	sh_rays	rec_max 
+# Purple sunset sky
+set 		0.6  	0.3  	0.5   	12 	4
+
+# Material:	dr    	dg    	db	sr   	sg   	sb 	rr   	rg  	rb	phong 	trans
+# Material for sand (warm sand color)
+mtl		0.98	0.85	0.65	0.5	0.4	0.3	0.1	0.08	0.05	25	0    
+# Material for ocean (proper blue)
+mtl		0.2	0.4	0.8	0.6	0.6	0.7	0.2	0.2	0.3	35	0    
+# Material for sun (orange sunset)
+mtl		1.0	0.3	0.1	0.9	0.7	0.3	0.3	0.2	0.1	60	0    
+# Material for tree trunk (rich brown)
+mtl		0.45	0.25	0.15	0.2	0.15	0.1	0.05	0.05	0.05	15	0    
+# Material for tree leaves (proper green)
+mtl		0.2	0.65	0.15	0.3	0.4	0.2	0.1	0.15	0.05	20	0    
+# Material for beach ball red
+mtl		1.0	0.0	0.0	0.6	0.4	0.4	0.1	0.1	0.1	15	0    
+# Material for beach ball white
+mtl		1.0	1.0	1.0	0.6	0.6	0.6	0.1	0.1	0.1	15	0    
+# bubble
+mtl	        0.00	0.40	1.00	1.00	0.00	0.00	0.30	0.40	0.30	10.00	0.95
+
+# Plane:	nx	ny	nz	offset	mat_idx
+# Sand (beach) plane
+pln		0	1	0	-1	1    
+# Ocean plane (proper blue ocean)
+pln		0	0	1	-8	2    
+
+# Sun (sphere): center (cx, cy, cz), radius, material index
+sph		0	3	-12	2.5	3    
+
+# Single Complete Palm Tree
+# Main trunk (taller and complete)
+box		-4	0	3	1	4    
+box		-4	1	3	1	4 
+box		-4	1.2	3	1	4       
+box		-4	2.2	3	1	4    
+# Complete palm fronds
+box		-4.5	3.2	3	1.0	5    
+box		-3.5	3.2	3	1.0	5    
+box		-4	3.8	3	1.4	5    
+box		-4.8	3.4	3	0.9	5    
+box		-3.2	3.4	3	0.9	5    
+box		-4	4.2	3	1.2	5    
+
+# Beach Ball:
+# Red section
+sph		2	0	4	0.5	6    
+# White section (slightly smaller)
+sph		2	0	4	0.48	7    
+# Bubble
+sph	3	5	4	0.2	8
+# Lights:	px	py	pz	r	g	b	spec	shadow	width
+# Main sunset light
+lgt		0	3	-12	1.0	0.3	0.1	1.0	0.85	6
+# Upper atmosphere light
+lgt		0	15	0	0.4	0.3	0.5	0.3	0.7	10
+# Ocean highlight light
+lgt		0	2	10	0.2	0.4	0.8	0.4	0.6	8
